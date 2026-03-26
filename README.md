@@ -576,7 +576,6 @@ SOFTWARE.
 
 ### Connect With Us
 
-- **Telegram**: [@soulcrack](https://t.me/soulcrack) - Join our community!
 - **GitHub**: [vikrant-project](https://github.com/vikrant-project)
 - **Issues**: [Report bugs or request features](https://github.com/vikrant-project/offline-voice-assistant/issues)
 
@@ -598,23 +597,6 @@ If you find Vicky AI helpful, please:
 - Community contributors and testers
 - All users who provided valuable feedback
 
----
-
-## 📸 Screenshots
-
-### Main Interface
-*[Screenshot placeholder - Main app screen showing listening status]*
-
-### Notification Reader
-*[Screenshot placeholder - Notification reading interface]*
-
-### Activity Log
-*[Screenshot placeholder - Command history and logs]*
-
-### Settings
-*[Screenshot placeholder - App settings and permissions]*
-
----
 
 ## 💡 Pro Tips
 
