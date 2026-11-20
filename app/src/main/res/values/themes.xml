@@ -1,9 +1,55 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.VoiceAssistant" parent="Theme.Material3.Light">
-        <item name="colorPrimary">#3498DB</item>
-        <item name="colorPrimaryDark">#2980B9</item>
-        <item name="colorAccent">#E74C3C</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
+    <style name="Theme.VoiceAssistant" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/google_blue</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorPrimaryContainer">@color/primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/on_primary_container</item>
+        <item name="colorSecondary">@color/google_green</item>
+        <item name="colorSecondaryContainer">@color/secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/on_secondary_container</item>
+        <item name="colorTertiary">@color/google_yellow</item>
+        <item name="colorError">@color/google_red</item>
+        <item name="android:colorBackground">@color/window_background</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorSurfaceContainer">@color/surface_container</item>
+        <item name="colorOnSurface">@color/on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/on_surface_variant</item>
+        <item name="colorOutlineVariant">@color/outline_variant</item>
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@color/window_background</item>
+        <item name="android:navigationBarColor">@color/window_background</item>
+
+        <!-- big soft corners everywhere, like Focus -->
+        <item name="shapeAppearanceSmallComponent">@style/Shape.Vicky.Small</item>
+        <item name="shapeAppearanceMediumComponent">@style/Shape.Vicky.Medium</item>
+        <item name="shapeAppearanceLargeComponent">@style/Shape.Vicky.Large</item>
+    </style>
+
+    <style name="Shape.Vicky.Small" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">12dp</item>
+    </style>
+    <style name="Shape.Vicky.Medium" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">20dp</item>
+    </style>
+    <style name="Shape.Vicky.Large" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">28dp</item>
+    </style>
+
+    <style name="Widget.Vicky.Card" parent="Widget.Material3.CardView.Filled">
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainer</item>
+        <item name="cardCornerRadius">28dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+
+    <style name="Text.Vicky.Label" parent="">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0.04</item>
     </style>
 </resources>

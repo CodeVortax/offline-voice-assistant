@@ -55,6 +55,10 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.core:core-ktx:1.13.1'
 
+    // Offline wake-word engine (Vosk) + its native bridge
+    implementation 'com.alphacephei:vosk-android:0.3.47'
+    implementation 'net.java.dev.jna:jna:5.13.0@aar'
+
     // Testing
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'

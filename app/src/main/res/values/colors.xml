@@ -1,43 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Primary Colors -->
-    <color name="purple_gradient_start">#667eea</color>
-    <color name="purple_gradient_mid">#764ba2</color>
-    <color name="purple_gradient_end">#f093fb</color>
-    
-    <!-- Telegram Brand Color -->
-    <color name="telegram_blue">#0088cc</color>
-    <color name="telegram_blue_dark">#006699</color>
-    
-    <!-- Accent Colors -->
-    <color name="green_start">#56ab2f</color>
-    <color name="green_end">#a8e063</color>
-    <color name="red_start">#eb3349</color>
-    <color name="red_end">#f45c43</color>
-    <color name="blue_start">#4facfe</color>
-    <color name="blue_end">#00f2fe</color>
-    <color name="orange_start">#f46b45</color>
-    <color name="orange_end">#eea849</color>
-    
-    <!-- Neutral Colors -->
-    <color name="white">#FFFFFFFF</color>
-    <color name="black">#FF000000</color>
-    <color name="gray_light">#F5F7FA</color>
-    <color name="gray_medium">#8E9AAF</color>
-    <color name="gray_dark">#2B2D42</color>
-    
-    <!-- Text Colors -->
-    <color name="text_primary">#1A1A2E</color>
-    <color name="text_secondary">#6B7280</color>
-    <color name="text_hint">#9CA3AF</color>
-    
-    <!-- Card & Surface -->
-    <color name="card_background">#FFFFFF</color>
-    <color name="surface_light">#F9FAFB</color>
-    
-    <!-- Vibrant Gradient Colors -->
-    <color name="pink_start">#f857a6</color>
-    <color name="pink_end">#ff5858</color>
-    <color name="cyan_start">#00d2ff</color>
-    <color name="cyan_end">#3a7bd5</color>
+    <!-- Google palette, same as Focus -->
+    <color name="google_blue">#4285F4</color>
+    <color name="google_red">#EA4335</color>
+    <color name="google_yellow">#FBBC04</color>
+    <color name="google_green">#34A853</color>
+
+    <color name="window_background">#F7F9FC</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_container">#FFFFFF</color>
+    <color name="on_surface">#1A1C1E</color>
+    <color name="on_surface_variant">#5F6368</color>
+    <color name="primary_container">#D3E3FD</color>
+    <color name="on_primary_container">#041E49</color>
+    <color name="secondary_container">#DDE3EA</color>
+    <color name="on_secondary_container">#171C22</color>
+    <color name="outline_variant">#E1E3E6</color>
 </resources>

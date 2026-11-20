@@ -39,6 +39,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:name=".VickyApp"
         android:theme="@style/Theme.VoiceAssistant"
         android:requestLegacyExternalStorage="true"
         tools:targetApi="34">
@@ -54,7 +55,7 @@
         </activity>
 
         <service
-            android:name=".VoiceRecognitionService"
+            android:name=".VoiceService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="microphone" />
@@ -62,7 +63,7 @@
         <!-- Notification Listener Service -->
         <service
             android:name=".NotificationReaderService"
-            android:label="Soul Crack Notification Reader"
+            android:label="Vicky Notification Reader"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
             android:exported="true">
             <intent-filter>

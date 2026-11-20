@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Soul Crack</string>
-    <string name="app_tagline">Your AI-Powered Voice Companion</string>
-    <string name="telegram_channel">@soulcrack</string>
+    <string name="app_name">Vicky</string>
+    <string name="app_tagline">Voice assistant</string>
 </resources>

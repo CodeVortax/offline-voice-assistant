@@ -1,33 +1,35 @@
 package com.voiceassistant.offline;
 
 import android.Manifest;
+import android.animation.ObjectAnimator;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.provider.Settings;
-import android.speech.tts.TextToSpeech;
 import android.text.TextUtils;
-import android.util.Log;
 import android.view.View;
-import android.widget.Button;
-import android.widget.ProgressBar;
+import android.view.animation.LinearInterpolator;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.SwitchCompat;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.materialswitch.MaterialSwitch;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -36,47 +38,38 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-public class MainActivity extends AppCompatActivity implements VoiceRecognitionService.VoiceCallback {
+public class MainActivity extends AppCompatActivity implements VoiceService.Listener {
 
     private static final int PERMISSION_REQUEST_CODE = 100;
-    private static final int NOTIFICATION_PERMISSION_CODE = 101;
-    private Button btnStartListening;
-    private Button btnStopListening;
-    private Button btnClearLogs;
-    private Button btnExportLogs;
-    private Button btnNotificationSettings;
-    private Button btnTelegram;
-    private TextView tvStatus;
-    private TextView tvRecognizedText;
-    private TextView tvLogs;
-    private TextView tvModelStatus;
-    private TextView tvNotificationStatus;
-    private TextView tvRecentNotifications;
-    private ProgressBar progressBar;
+    private static final String ACTION_NOTIFICATION = "com.voiceassistant.offline.NOTIFICATION_RECEIVED";
+
+    private MaterialButton btnToggle, btnNotificationSettings, btnOverlay;
+    private TextView tvStatus, tvHint, tvRecognizedText, tvLogs, tvNotificationStatus, tvRecentNotifications;
+    private View statusDot;
+    private View cardOverlay;
     private ScrollView scrollView;
-    private SwitchCompat switchNotifications;
-    
-    private VoiceRecognitionService voiceService;
-    private boolean isListening = false;
-    private boolean isModelReady = false;
-    private TextToSpeech textToSpeech;
-    private boolean isTTSReady = false;
+    private MaterialSwitch switchNotifications;
+    private ObjectAnimator pulse;
+
     private SharedPreferences notificationPrefs;
-    
-    private BroadcastReceiver notificationReceiver = new BroadcastReceiver() {
+    private boolean updatingSwitch = false;
+
+    private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (p, key) -> {
+        if (NotificationReaderService.PREF_ENABLED.equals(key)) runOnUiThread(this::syncNotificationSwitch);
+    };
+
+    private final BroadcastReceiver notificationReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if ("com.voiceassistant.offline.NOTIFICATION_RECEIVED".equals(intent.getAction())) {
-                String appName = intent.getStringExtra("app_name");
-                String title = intent.getStringExtra("title");
-                String text = intent.getStringExtra("text");
-                String message = intent.getStringExtra("message");
-                
-                runOnUiThread(() -> {
-                    addLog("🔔 " + message);
-                    updateRecentNotification(appName, title, text);
-                });
-            }
+            if (!ACTION_NOTIFICATION.equals(intent.getAction())) return;
+            String appName = intent.getStringExtra("app_name");
+            String title = intent.getStringExtra("title");
+            String text = intent.getStringExtra("text");
+            runOnUiThread(() -> {
+                addLog("Notification: " + appName + (TextUtils.isEmpty(title) ? "" : " – " + title));
+                tvRecentNotifications.setVisibility(View.VISIBLE);
+                tvRecentNotifications.setText(appName + "\n" + (title == null ? "" : title) + "\n" + (text == null ? "" : text));
+            });
         }
     };
 
@@ -84,14 +77,15 @@ public class MainActivity extends AppCompatActivity implements VoiceRecognitionS
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
+        applySystemBars();
         initViews();
         checkPermissions();
-        initVoiceService();
-        initNotificationService();
-        
-        // Register notification receiver with proper flags for Android 13+
-        IntentFilter filter = new IntentFilter("com.voiceassistant.offline.NOTIFICATION_RECEIVED");
+
+        notificationPrefs = getSharedPreferences(NotificationReaderService.PREFS_NAME, Context.MODE_PRIVATE);
+        notificationPrefs.registerOnSharedPreferenceChangeListener(prefsListener);
+        syncNotificationSwitch();
+
+        IntentFilter filter = new IntentFilter(ACTION_NOTIFICATION);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(notificationReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
@@ -99,447 +93,250 @@ public class MainActivity extends AppCompatActivity implements VoiceRecognitionS
         }
     }
 
+    private void applySystemBars() {
+        boolean night = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        WindowInsetsControllerCompat c = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        c.setAppearanceLightStatusBars(!night);
+        c.setAppearanceLightNavigationBars(!night);
+    }
+
     private void initViews() {
-        btnStartListening = findViewById(R.id.btnStartListening);
-        btnStopListening = findViewById(R.id.btnStopListening);
-        btnClearLogs = findViewById(R.id.btnClearLogs);
-        btnExportLogs = findViewById(R.id.btnExportLogs);
+        btnToggle = findViewById(R.id.btnToggle);
         btnNotificationSettings = findViewById(R.id.btnNotificationSettings);
-        btnTelegram = findViewById(R.id.btnTelegram);
+        btnOverlay = findViewById(R.id.btnOverlay);
+        cardOverlay = findViewById(R.id.cardOverlay);
         tvStatus = findViewById(R.id.tvStatus);
+        tvHint = findViewById(R.id.tvHint);
         tvRecognizedText = findViewById(R.id.tvRecognizedText);
         tvLogs = findViewById(R.id.tvLogs);
-        tvModelStatus = findViewById(R.id.tvModelStatus);
         tvNotificationStatus = findViewById(R.id.tvNotificationStatus);
         tvRecentNotifications = findViewById(R.id.tvRecentNotifications);
-        progressBar = findViewById(R.id.progressBar);
+        statusDot = findViewById(R.id.statusDot);
         scrollView = findViewById(R.id.scrollView);
         switchNotifications = findViewById(R.id.switchNotifications);
 
-        btnStartListening.setOnClickListener(v -> startListening());
-        btnStopListening.setOnClickListener(v -> stopListening());
-        btnClearLogs.setOnClickListener(v -> clearLogs());
-        btnExportLogs.setOnClickListener(v -> exportLogs());
+        btnToggle.setOnClickListener(v -> toggleListening());
         btnNotificationSettings.setOnClickListener(v -> openNotificationSettings());
-        btnTelegram.setOnClickListener(v -> openTelegramChannel());
-        
-        if (switchNotifications != null) {
-            switchNotifications.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                if (notificationPrefs != null) {
-                    notificationPrefs.edit().putBoolean(NotificationReaderService.PREF_ENABLED, isChecked).apply();
-                }
-                updateNotificationStatus(isChecked);
-                if (isChecked && !isNotificationAccessGranted()) {
-                    openNotificationSettings();
-                }
-            });
-        }
-        
-        btnStartListening.setEnabled(false);
-        btnStopListening.setEnabled(false);
-        progressBar.setVisibility(View.VISIBLE);
-        tvModelStatus.setText("🔄 Loading voice model...");
+        btnOverlay.setOnClickListener(v -> openOverlaySettings());
+        findViewById(R.id.btnClearLogs).setOnClickListener(v -> clearLogs());
+        findViewById(R.id.btnExportLogs).setOnClickListener(v -> exportLogs());
+
+        switchNotifications.setOnCheckedChangeListener((b, isChecked) -> {
+            if (updatingSwitch) return;
+            notificationPrefs.edit().putBoolean(NotificationReaderService.PREF_ENABLED, isChecked).apply();
+            addLog(isChecked ? "Notification reading on" : "Notification reading off");
+            if (isChecked && !isNotificationAccessGranted()) openNotificationSettings();
+        });
+
+        // tap the status text to stop/start too
+        tvStatus.setOnClickListener(v -> toggleListening());
     }
-    
-    private void initNotificationService() {
-        try {
-            notificationPrefs = getSharedPreferences(NotificationReaderService.PREFS_NAME, Context.MODE_PRIVATE);
-            boolean isEnabled = notificationPrefs.getBoolean(NotificationReaderService.PREF_ENABLED, true);
-            
-            if (switchNotifications != null) {
-                switchNotifications.setChecked(isEnabled);
+
+    // ---------------------------------------------------------------- service control
+
+    private void toggleListening() {
+        if (VoiceService.running) {
+            startService(new Intent(this, VoiceService.class).setAction(VoiceService.ACTION_STOP));
+            renderRunning(false);
+        } else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, "Microphone permission is required", Toast.LENGTH_LONG).show();
+                checkPermissions();
+                return;
             }
-            updateNotificationStatus(isEnabled);
-            
-            // Check if notification access is granted
-            if (isNotificationAccessGranted()) {
-                addLog("✅ Notification access granted");
-                if (btnNotificationSettings != null) {
-                    btnNotificationSettings.setVisibility(View.GONE);
-                }
-            } else {
-                addLog("⚠️ Notification access not granted");
-                if (btnNotificationSettings != null) {
-                    btnNotificationSettings.setVisibility(View.VISIBLE);
-                }
-            }
-        } catch (Exception e) {
-            Log.e("MainActivity", "Error initializing notification service", e);
-            addLog("⚠️ Error initializing notifications: " + e.getMessage());
+            ContextCompat.startForegroundService(this, new Intent(this, VoiceService.class).setAction(VoiceService.ACTION_START));
+            renderRunning(true);
+            addLog("Starting…");
         }
     }
-    
+
+    private void renderRunning(boolean running) {
+        btnToggle.setText(running ? "Stop listening" : "Start listening");
+        btnToggle.setIconResource(running ? R.drawable.ic_stop : R.drawable.ic_mic);
+        if (!running) tvStatus.setText("Idle");
+        if (running) {
+            if (pulse == null) {
+                pulse = ObjectAnimator.ofFloat(statusDot, View.ALPHA, 0.25f, 1f);
+                pulse.setDuration(900);
+                pulse.setRepeatMode(ObjectAnimator.REVERSE);
+                pulse.setRepeatCount(ObjectAnimator.INFINITE);
+                pulse.setInterpolator(new LinearInterpolator());
+            }
+            if (!pulse.isStarted()) pulse.start();
+        } else {
+            if (pulse != null) pulse.cancel();
+            statusDot.setAlpha(0.35f);
+        }
+    }
+
+    // ---------------------------------------------------------------- VoiceService.Listener
+
+    @Override
+    public void onState(String state) {
+        runOnUiThread(() -> {
+            if (VoiceService.running || !"Stopped".equals(state)) tvStatus.setText(state);
+            if ("Stopped".equals(state)) renderRunning(false);
+        });
+    }
+
+    @Override
+    public void onHeard(String text) {
+        runOnUiThread(() -> {
+            tvRecognizedText.setText(text);
+            addLog("Heard: " + text);
+        });
+    }
+
+    @Override
+    public void onResult(String message, boolean success) {
+        runOnUiThread(() -> addLog((success ? "✓ " : "✗ ") + message));
+    }
+
+    @Override
+    public void onLog(String message) {
+        runOnUiThread(() -> addLog(message));
+    }
+
+    // ---------------------------------------------------------------- notifications access
+
+    private void syncNotificationSwitch() {
+        boolean enabled = notificationPrefs.getBoolean(NotificationReaderService.PREF_ENABLED, true);
+        updatingSwitch = true;
+        switchNotifications.setChecked(enabled);
+        updatingSwitch = false;
+
+        boolean granted = isNotificationAccessGranted();
+        btnNotificationSettings.setVisibility(granted ? View.GONE : View.VISIBLE);
+        if (!enabled) tvNotificationStatus.setText("Off");
+        else tvNotificationStatus.setText(granted ? "On" : "On, but access is not granted");
+    }
+
     private boolean isNotificationAccessGranted() {
-        String pkgName = getPackageName();
+        String pkg = getPackageName();
         String flat = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
         if (!TextUtils.isEmpty(flat)) {
-            String[] names = flat.split(":");
-            for (String name : names) {
-                if (name.contains(pkgName)) {
-                    return true;
-                }
+            for (String name : flat.split(":")) {
+                if (name.contains(pkg)) return true;
             }
         }
         return false;
     }
-    
+
     private void openNotificationSettings() {
         try {
-            Intent intent = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
-            startActivity(intent);
-            Toast.makeText(this, "Please enable Soul Crack from the list", Toast.LENGTH_LONG).show();
+            startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+            Toast.makeText(this, "Enable Vicky in the list", Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             Toast.makeText(this, "Failed to open settings", Toast.LENGTH_SHORT).show();
         }
     }
-    
-    private void openTelegramChannel() {
+
+    private void openOverlaySettings() {
         try {
-            String channelUsername = "soulcrack";
-            
-            // Try to open in Telegram app first
-            Intent telegramIntent = new Intent(Intent.ACTION_VIEW);
-            telegramIntent.setData(Uri.parse("tg://resolve?domain=" + channelUsername));
-            telegramIntent.setPackage("org.telegram.messenger");
-            
-            try {
-                startActivity(telegramIntent);
-                addLog("📱 Opening @soulcrack in Telegram app");
-            } catch (Exception e) {
-                // If Telegram app not installed, open in browser
-                Intent browserIntent = new Intent(Intent.ACTION_VIEW);
-                browserIntent.setData(Uri.parse("https://t.me/" + channelUsername));
-                startActivity(browserIntent);
-                addLog("🌐 Opening @soulcrack in browser");
-            }
-            
-            Toast.makeText(this, "Join our Telegram channel @soulcrack!", Toast.LENGTH_LONG).show();
+            startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));
         } catch (Exception e) {
-            Toast.makeText(this, "Failed to open Telegram channel", Toast.LENGTH_SHORT).show();
-            Log.e("MainActivity", "Error opening Telegram", e);
-        }
-    }
-    
-    private void updateNotificationStatus(boolean isEnabled) {
-        if (isEnabled) {
-            tvNotificationStatus.setText("🔔 Notification Reader: Enabled");
-            addLog("✅ Notification reading enabled");
-        } else {
-            tvNotificationStatus.setText("🔕 Notification Reader: Disabled");
-            addLog("⏸️ Notification reading disabled");
-        }
-    }
-    
-    private void updateRecentNotification(String appName, String title, String text) {
-        if (tvRecentNotifications != null) {
-            String notification = String.format("📱 %s\n👤 %s\n💬 %s", 
-                appName, title, text);
-            tvRecentNotifications.setText(notification);
+            Toast.makeText(this, "Failed to open settings", Toast.LENGTH_SHORT).show();
         }
     }
 
-    private void initVoiceService() {
-        voiceService = new VoiceRecognitionService();
-        voiceService.setCallback(this);
-        voiceService.initialize(this);
-        
-        // Initialize Text-to-Speech
-        textToSpeech = new TextToSpeech(this, status -> {
-            if (status == TextToSpeech.SUCCESS) {
-                // Try Hindi first, fallback to English if not available
-                int hindiResult = textToSpeech.setLanguage(new Locale("hi", "IN"));
-                if (hindiResult == TextToSpeech.LANG_MISSING_DATA || hindiResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    addLog("⚠️ Hindi not supported, using English");
-                    int englishResult = textToSpeech.setLanguage(Locale.US);
-                    if (englishResult == TextToSpeech.LANG_MISSING_DATA || englishResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-                        isTTSReady = false;
-                        addLog("❌ TTS Language not supported");
-                    } else {
-                        isTTSReady = true;
-                        addLog("✅ Text-to-Speech ready (English)");
-                    }
-                } else {
-                    isTTSReady = true;
-                    addLog("✅ Text-to-Speech ready (Hindi)");
-                }
-            } else {
-                addLog("❌ TTS initialization failed");
-                isTTSReady = false;
-            }
-        });
-    }
+    // ---------------------------------------------------------------- permissions
 
     private void checkPermissions() {
-        String[] permissions;
-        
-        // Add POST_NOTIFICATIONS permission for Android 13+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions = new String[]{
-                Manifest.permission.RECORD_AUDIO,
-                Manifest.permission.SEND_SMS,
-                Manifest.permission.READ_CONTACTS,
-                Manifest.permission.CAMERA,
-                Manifest.permission.READ_PHONE_STATE,
-                Manifest.permission.RECEIVE_SMS,
-                Manifest.permission.READ_SMS,
-                Manifest.permission.POST_NOTIFICATIONS,
-                Manifest.permission.CALL_PHONE,
-                Manifest.permission.ANSWER_PHONE_CALLS,
-                Manifest.permission.READ_CALL_LOG
-            };
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            permissions = new String[]{
-                Manifest.permission.RECORD_AUDIO,
-                Manifest.permission.SEND_SMS,
-                Manifest.permission.READ_CONTACTS,
-                Manifest.permission.CAMERA,
-                Manifest.permission.READ_PHONE_STATE,
-                Manifest.permission.RECEIVE_SMS,
-                Manifest.permission.READ_SMS,
-                Manifest.permission.CALL_PHONE,
-                Manifest.permission.ANSWER_PHONE_CALLS,
-                Manifest.permission.READ_CALL_LOG
-            };
-        } else {
-            permissions = new String[]{
-                Manifest.permission.RECORD_AUDIO,
-                Manifest.permission.SEND_SMS,
-                Manifest.permission.READ_CONTACTS,
-                Manifest.permission.CAMERA,
-                Manifest.permission.READ_PHONE_STATE,
-                Manifest.permission.RECEIVE_SMS,
-                Manifest.permission.READ_SMS,
-                Manifest.permission.CALL_PHONE,
-                Manifest.permission.READ_CALL_LOG
-            };
-        }
+        java.util.ArrayList<String> perms = new java.util.ArrayList<>();
+        perms.add(Manifest.permission.RECORD_AUDIO);
+        perms.add(Manifest.permission.SEND_SMS);
+        perms.add(Manifest.permission.READ_CONTACTS);
+        perms.add(Manifest.permission.CAMERA);
+        perms.add(Manifest.permission.READ_PHONE_STATE);
+        perms.add(Manifest.permission.RECEIVE_SMS);
+        perms.add(Manifest.permission.READ_SMS);
+        perms.add(Manifest.permission.CALL_PHONE);
+        perms.add(Manifest.permission.READ_CALL_LOG);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) perms.add(Manifest.permission.ANSWER_PHONE_CALLS);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) perms.add(Manifest.permission.POST_NOTIFICATIONS);
 
-        boolean allGranted = true;
-        for (String permission : permissions) {
-            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
-                allGranted = false;
-                break;
-            }
+        java.util.ArrayList<String> missing = new java.util.ArrayList<>();
+        for (String p : perms) {
+            if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) missing.add(p);
         }
-
-        if (!allGranted) {
-            ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE);
+        if (!missing.isEmpty()) {
+            ActivityCompat.requestPermissions(this, missing.toArray(new String[0]), PERMISSION_REQUEST_CODE);
         }
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            boolean allGranted = true;
-            for (int result : grantResults) {
-                if (result != PackageManager.PERMISSION_GRANTED) {
-                    allGranted = false;
-                    break;
-                }
-            }
-            if (!allGranted) {
-                Toast.makeText(this, "Permissions are required for app to work", Toast.LENGTH_LONG).show();
-            }
+        if (requestCode == PERMISSION_REQUEST_CODE
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "Microphone permission is required for Vicky to work", Toast.LENGTH_LONG).show();
         }
     }
 
-    private void startListening() {
-        if (!isModelReady) {
-            Toast.makeText(this, "⚠️ Voice model is still loading. Please wait...", Toast.LENGTH_LONG).show();
-            addLog("❌ Cannot start - Model not ready yet");
-            return;
-        }
-        
-        if (voiceService.startListening()) {
-            isListening = true;
-            btnStartListening.setEnabled(false);
-            btnStopListening.setEnabled(true);
-            tvStatus.setText("🎤 Status: Listening...");
-            addLog("🎤 Started listening for voice commands");
-        } else {
-            Toast.makeText(this, "Failed to start voice recognition", Toast.LENGTH_SHORT).show();
-            addLog("❌ Failed to start voice recognition");
-        }
-    }
+    // ---------------------------------------------------------------- logs
 
-    private void stopListening() {
-        voiceService.stopListening();
-        isListening = false;
-        btnStartListening.setEnabled(true);
-        btnStopListening.setEnabled(false);
-        tvStatus.setText("⏸️ Status: Idle");
-        addLog("⏹️ Stopped listening");
-    }
-    
     private void clearLogs() {
-        new AlertDialog.Builder(this)
-            .setTitle("Clear Logs")
-            .setMessage("Are you sure you want to clear all activity logs?")
-            .setPositiveButton("Yes", (dialog, which) -> {
-                tvLogs.setText("");
-                addLog("🗑️ Logs cleared");
-            })
-            .setNegativeButton("No", null)
-            .show();
-    }
-    
-    private void exportLogs() {
-        try {
-            String logs = tvLogs.getText().toString();
-            if (logs.isEmpty()) {
-                Toast.makeText(this, "No logs to export", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            
-            File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "TiruAssistant");
-            if (!dir.exists()) {
-                dir.mkdirs();
-            }
-            
-            String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-            File file = new File(dir, "logs_" + timestamp + ".txt");
-            
-            FileWriter writer = new FileWriter(file);
-            writer.write("Tiru Voice Assistant - Activity Logs\n");
-            writer.write("Exported: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()) + "\n");
-            writer.write("=" + "=".repeat(50) + "\n\n");
-            writer.write(logs);
-            writer.close();
-            
-            Toast.makeText(this, "✅ Logs exported to: " + file.getAbsolutePath(), Toast.LENGTH_LONG).show();
-            addLog("💾 Logs exported successfully");
-        } catch (IOException e) {
-            Toast.makeText(this, "❌ Failed to export logs: " + e.getMessage(), Toast.LENGTH_LONG).show();
-            addLog("❌ Export failed: " + e.getMessage());
-        }
-    }
-
-    @Override
-    public void onVoiceResult(String text) {
-        runOnUiThread(() -> {
-            tvRecognizedText.setText("💬 You said: " + text);
-            addLog("👂 Recognized: " + text);
-        });
-    }
-
-    @Override
-    public void onVoiceError(String error) {
-        runOnUiThread(() -> {
-            Toast.makeText(MainActivity.this, "❌ Error: " + error, Toast.LENGTH_LONG).show();
-            addLog("❌ Error: " + error);
-        });
-    }
-
-    @Override
-    public void onCommandExecuted(String command, boolean success) {
-        runOnUiThread(() -> {
-            String message = success ? 
-                "✅ Executed: " + command : 
-                "❌ Failed to execute: " + command;
-            addLog(message);
-            Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show();
-            
-            // Speak the response
-            if (success) {
-                speak(command);
-            } else {
-                speak("Failed to execute " + command);
-            }
-        });
-    }
-    
-    @Override
-    public void onModelReady() {
-        runOnUiThread(() -> {
-            isModelReady = true;
-            btnStartListening.setEnabled(true);
-            progressBar.setVisibility(View.GONE);
-            tvModelStatus.setText("✅ Voice model ready!");
-            tvStatus.setText("✅ Status: Ready");
-            addLog("✅ Voice model initialized successfully");
-            Toast.makeText(MainActivity.this, "✅ Voice model loaded! You can start listening now.", Toast.LENGTH_LONG).show();
-        });
-    }
-    
-    @Override
-    public void onModelError(String error) {
-        runOnUiThread(() -> {
-            isModelReady = false;
-            btnStartListening.setEnabled(false);
-            progressBar.setVisibility(View.GONE);
-            tvModelStatus.setText("❌ Model failed to load");
-            tvStatus.setText("❌ Status: Model Error");
-            addLog("❌ Model initialization failed: " + error);
-            
-            new AlertDialog.Builder(this)
-                .setTitle("Model Loading Failed")
-                .setMessage("Failed to load voice model. Please ensure:\n\n" +
-                    "1. You have downloaded the Vosk model\n" +
-                    "2. The model is placed in: app/src/main/assets/model/\n" +
-                    "3. The model folder contains: am/, conf/, graph/, ivector/\n\n" +
-                    "Error: " + error)
-                .setPositiveButton("Retry", (dialog, which) -> {
-                    progressBar.setVisibility(View.VISIBLE);
-                    tvModelStatus.setText("🔄 Retrying model load...");
-                    voiceService.retryInitialization();
-                })
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Clear activity")
+                .setMessage("Remove all entries?")
+                .setPositiveButton("Clear", (d, w) -> tvLogs.setText(""))
                 .setNegativeButton("Cancel", null)
                 .show();
-        });
+    }
+
+    private void exportLogs() {
+        String logs = tvLogs.getText().toString();
+        if (logs.isEmpty()) {
+            Toast.makeText(this, "No logs to export", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            File dir = getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS);
+            if (dir == null) dir = getFilesDir();
+            if (!dir.exists()) dir.mkdirs();
+            String ts = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+            File file = new File(dir, "vicky_logs_" + ts + ".txt");
+            try (FileWriter w = new FileWriter(file)) { w.write(logs); }
+            Toast.makeText(this, "Saved: " + file.getAbsolutePath(), Toast.LENGTH_LONG).show();
+        } catch (IOException e) {
+            Toast.makeText(this, "Export failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     private void addLog(String message) {
-        String timestamp = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
-        String logEntry = "[" + timestamp + "] " + message + "\n";
-        tvLogs.append(logEntry);
+        String ts = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
+        tvLogs.append("[" + ts + "] " + message + "\n");
         scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
     }
-    
-    private void speak(String text) {
-        if (isTTSReady && textToSpeech != null) {
-            // Stop any ongoing speech
-            textToSpeech.stop();
-            // Speak the text
-            textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
-            addLog("🔊 Speaking: " + text);
-        }
+
+    // ---------------------------------------------------------------- lifecycle
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        VoiceService.setListener(this);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        syncNotificationSwitch();
+        renderRunning(VoiceService.running);
+        if (VoiceService.running && "Idle".contentEquals(tvStatus.getText())) tvStatus.setText("Waiting for \"Vicky\"");
+        cardOverlay.setVisibility(Settings.canDrawOverlays(this) ? View.GONE : View.VISIBLE);
+    }
+
+    @Override
+    protected void onStop() {
+        VoiceService.setListener(null);
+        super.onStop();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (voiceService != null) {
-            voiceService.shutdown();
-        }
-        if (textToSpeech != null) {
-            textToSpeech.stop();
-            textToSpeech.shutdown();
-        }
-        try {
-            unregisterReceiver(notificationReceiver);
-        } catch (Exception e) {
-            // Receiver not registered
-        }
-    }
-    
-    @Override
-    protected void onResume() {
-        super.onResume();
-        // Update notification access status
-        try {
-            if (isNotificationAccessGranted()) {
-                if (btnNotificationSettings != null) {
-                    btnNotificationSettings.setVisibility(View.GONE);
-                }
-                addLog("✅ Notification access is active");
-            } else {
-                if (btnNotificationSettings != null) {
-                    btnNotificationSettings.setVisibility(View.VISIBLE);
-                }
-            }
-        } catch (Exception e) {
-            Log.e("MainActivity", "Error in onResume", e);
-        }
+        if (pulse != null) pulse.cancel();
+        if (notificationPrefs != null) notificationPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener);
+        try { unregisterReceiver(notificationReceiver); } catch (Exception ignored) { }
     }
 }
