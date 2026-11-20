@@ -1,0 +1,66 @@
+{
+  "$schema": "https://vicky-ai.dev/schemas/plugin-v1.json",
+  "schemaVersion": "1.0",
+  "id": "home-assistant",
+  "name": "Home Assistant",
+  "arabicName": "البيت الذكي",
+  "version": "1.0.0",
+  "author": "Vicky Templates",
+  "description": "Control smart lights, scenes, and climate via Home Assistant webhooks and internal logs.",
+  "descriptionAr": "التحكم بالإضاءة والتكييف والمشاهد الذكية عبر واجهة Home Assistant.",
+  "enabled": true,
+  "capabilities": [
+    "custom_action"
+  ],
+  "internalHandler": {
+    "enabled": true,
+    "storageNamespace": "home_assistant",
+    "storeRecords": true,
+    "responseTemplateEn": "Sent smart home command: {{text}}",
+    "responseTemplateAr": "تم إرسال أمر البيت الذكي: {{text}}"
+  },
+  "actions": [
+    {
+      "id": "toggle_lights",
+      "capability": "custom_action",
+      "title": "Control Lights",
+      "titleAr": "التحكم بالإضاءة",
+      "triggers": {
+        "en": [
+          "living room light",
+          "bedroom light",
+          "lights",
+          "home assistant"
+        ],
+        "ar": [
+          "شغل النور",
+          "اطفي النور",
+          "نور الصالة",
+          "البيت الذكي"
+        ]
+      },
+      "parameters": [
+        {
+          "name": "text",
+          "type": "string",
+          "required": true,
+          "source": "remainder"
+        }
+      ],
+      "uriTemplate": "homeassistant://navigate/lovelace",
+      "webhook": {
+        "method": "POST",
+        "url": "http://homeassistant.local:8123/api/webhook/vicky_lights",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyTemplate": {
+          "command": "{{text}}",
+          "source": "vicky-ai"
+        }
+      },
+      "responseTemplateEn": "Home Assistant lights command sent: {{text}}",
+      "responseTemplateAr": "تم إرسال أمر الإضاءة إلى البيت الذكي: {{text}}"
+    }
+  ]
+}

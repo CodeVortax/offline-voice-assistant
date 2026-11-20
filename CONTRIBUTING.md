@@ -140,7 +140,7 @@ offline-voice-assistant/
 ├── app/
 │   ├── src/
 │   │   ├── main/
-│   │   │   ├── java/com/voiceassistant/offline/
+│   │   │   ├── java/me2008/assistant/
 │   │   │   │   ├── MainActivity.java
 │   │   │   │   ├── VoiceRecognitionService.java
 │   │   │   │   ├── CommandExecutor.java
@@ -217,7 +217,7 @@ private static final String TAG = "MainActivity";
 private static final int PERMISSION_REQUEST_CODE = 100;
 
 // Package names: lowercase
-package com.voiceassistant.offline;
+package me2008.assistant;
 ```
 
 #### Code Formatting

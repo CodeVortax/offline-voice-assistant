@@ -1,0 +1,11 @@
+{
+  "name": "Vicky AI - Offline Voice Assistant",
+  "description": "Privacy-focused voice assistant with Hey Vicky wake-word recognition, Arabic & English NLU, alarms, routines, messaging, app integrations, and fast small intelligence.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,141 @@
+name: Build APK & Publish Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-release:
+    name: Build Web Bundle & Android APK (me2008.assistant)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Set up Java 21 (for Android Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Validate plugin JSON schema
+        run: |
+          node -e "
+            const fs = require('fs');
+            const manifest = JSON.parse(fs.readFileSync('docs/PLUGIN_SCHEMA_EXAMPLE.json', 'utf8'));
+            if (manifest.schemaVersion !== '1.0' || !manifest.id || !Array.isArray(manifest.actions) || manifest.actions.length === 0) {
+              throw new Error('Invalid docs/PLUGIN_SCHEMA_EXAMPLE.json');
+            }
+            console.log('Validated plugin manifest:', manifest.id);
+          "
+
+      - name: Run ESLint & TypeScript Web Build
+        run: |
+          npm run lint
+          npm run build
+
+      - name: Sync Capacitor Android assets
+        run: npx cap sync android
+
+      - name: Build Android APK (me2008.assistant)
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug assembleRelease
+
+      - name: Prepare & Sign Release APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p release-artifacts
+          DEBUG_APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          UNSIGNED_RELEASE_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          FINAL_APK="release-artifacts/VickyAI-me2008.assistant.apk"
+
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -f "$UNSIGNED_RELEASE_APK" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > release.keystore
+            SDK_DIR="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+            APKSIGNER=$(find "$SDK_DIR/build-tools" -name "apksigner" | sort -V | tail -n 1)
+            "$APKSIGNER" sign \
+              --ks release.keystore \
+              --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD" \
+              --ks-key-alias "$ANDROID_KEY_ALIAS" \
+              --key-pass pass:"$ANDROID_KEY_PASSWORD" \
+              --out "$FINAL_APK" \
+              "$UNSIGNED_RELEASE_APK"
+            rm -f release.keystore
+            echo "Signed production Release APK: $FINAL_APK"
+          else
+            cp "$DEBUG_APK" "$FINAL_APK"
+            echo "Prepared installable Debug APK: $FINAL_APK"
+          fi
+          ls -lh release-artifacts/
+
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VickyAI-me2008.assistant-apk
+          path: release-artifacts/VickyAI-me2008.assistant.apk
+          retention-days: 30
+
+      - name: Send APK to GitHub Release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Vicky AI {0}', github.ref_name) || 'Vicky AI (Latest APK)' }}
+          body: |
+            Automated build of **Vicky AI** (`me2008.assistant`).
+
+            - **APK Asset:** `VickyAI-me2008.assistant.apk`
+            - **Package ID:** `me2008.assistant`
+            - **Commit:** `${{ github.sha }}`
+          files: |
+            release-artifacts/VickyAI-me2008.assistant.apk
+          make_latest: true
+          draft: false
+          prerelease: false
